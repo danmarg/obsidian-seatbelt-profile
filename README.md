@@ -21,6 +21,13 @@ Optional overrides:
 APP_PATH=/Applications/Obsidian.app ./run-obsidian-sandboxed.sh ~/Documents/MyVault
 ```
 
+You can make a clickable "app" via Automator's "Run Shell Script" automation:
+
+```bash
+nohup ~/obsidian-sb/run-obsidian-sandboxed.sh ~/Documents/Obsidian\ Vault > /dev/null 2>&1 < /dev/null &
+disown
+```
+
 ## What this does and doesn't protect against
 
 **Confines:** filesystem reads/writes to your vault directory, its own app
