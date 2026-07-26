@@ -1,0 +1,141 @@
+(version 1)
+(deny default)
+
+;; ================================================================
+;; Parameters — supplied at launch time via `sandbox-exec -D KEY=VALUE`.
+;; See run-obsidian-sandboxed.sh, which sets these for you.
+;;   USER_HOME  e.g. /Users/alice
+;;   VAULT_PATH e.g. /Users/alice/Documents/MyVault
+;;   APP_PATH   e.g. /Applications/Obsidian.app
+;; ================================================================
+(define USER_HOME (param "USER_HOME"))
+(define VAULT_PATH (param "VAULT_PATH"))
+(define APP_PATH (param "APP_PATH"))
+
+;; ============================================================
+;; 1. Mach services (XPC / system daemons)
+;; ============================================================
+(allow mach-lookup
+    (global-name "com.apple.SystemConfiguration.DNSConfiguration")
+    (global-name "com.apple.bsd.dirhelper")
+    (global-name "com.apple.system.opendirectoryd.membership")
+    (global-name "com.apple.system.opendirectoryd.libinfo")
+    (global-name "com.apple.SafariPlatformSupport.Helper")
+    (global-name "com.apple.ViewBridgeAuxiliary")
+    (global-name "com.apple.spotlight.IndexAgent")
+    (global-name "com.apple.dock.server")
+    (global-name "com.apple.system.notification_center")
+    (global-name "com.apple.logd")
+    (global-name "com.apple.windowserver.active")
+    (global-name "com.apple.windowmanager.server")
+    (global-name "com.apple.lsd.mapdb")
+    (global-name "com.apple.cfprefsd.daemon")
+    (global-name "com.apple.cfprefsd.agent")
+    (global-name "com.apple.coreservices.launchservicesd")
+    (global-name "com.apple.CoreServices.coreservicesd")
+    (global-name "com.apple.fonts")
+    (global-name "com.apple.diagnosticd")
+    (global-name "com.apple.pasteboard.1")
+    (global-name "com.apple.CARenderServer")
+    (global-name "com.apple.iohideventsystem")
+    (global-name "com.apple.CoreDisplay.currentTime"))
+
+;; Electron/Chromium multi-process port handoff (PID suffix is dynamic).
+;; "md.obsidian" is Obsidian's bundle identifier — fixed across installs,
+;; unlike the paths above, so it isn't parameterized.
+(allow mach-register mach-lookup
+    (global-name-regex #"^md\.obsidian\.MachPortRendezvousServer\."))
+
+;; Let Obsidian signal/terminate its own helper processes (GPU, renderer)
+(allow signal (target children))
+
+;; ============================================================
+;; 2. Hardware / power / graphics
+;; ============================================================
+(allow iokit-open-user-client
+    (iokit-user-client-class "RootDomainUserClient")
+    (iokit-user-client-class "IOSurfaceRootUserClient")
+    (iokit-user-client-class "IOSurfaceSendRight"))
+
+;; ============================================================
+;; 3. Process & execution core
+;; ============================================================
+(allow process-fork)
+(allow sysctl-read)
+(allow ipc-posix-shm)
+(allow process-exec* (subpath APP_PATH))
+
+;; ============================================================
+;; 4. Structural filesystem access (path traversal / resolution)
+;; ============================================================
+(allow file-read-data file-read-metadata
+    (literal "/")
+    (literal USER_HOME)
+    (literal (string-append USER_HOME "/Library"))
+    (literal (string-append USER_HOME "/Library/Application Support"))
+    (literal (string-append USER_HOME "/Library/Caches"))
+    (literal "/private/etc")
+    (literal "/private/etc/resolv.conf")
+    (literal "/private/etc/hosts")
+    (subpath "/private/var/run"))
+
+;; Every ancestor directory of the vault, metadata-only. This is what
+;; lets FSEvents/kqueue register a watch on VAULT_PATH no matter where
+;; it lives — without granting read/write on its parent directories.
+(allow file-read-metadata (path-ancestors VAULT_PATH))
+
+(allow file-read-metadata
+    (literal "/etc") (literal "/var") (literal "/private")
+    (literal "/Applications") (literal "/Users"))
+
+(allow file-read-data file-read-metadata
+    (literal (string-append USER_HOME "/Library/Preferences/com.apple.symbolichotkeys.plist"))
+    (literal "/Library/Preferences/com.apple.networkd.plist"))
+
+;; ============================================================
+;; 5. System devices
+;; ============================================================
+(allow file-ioctl (literal "/dev/dtracehelper"))
+(allow file-read* file-write* (literal "/dev/null") (literal "/dev/dtracehelper"))
+
+;; ============================================================
+;; 6. System framework libraries (read-only)
+;; ============================================================
+(allow file-read*
+    (subpath "/System") (subpath "/usr") (subpath "/lib")
+    (subpath "/Library/Fonts") (subpath "/Library/Preferences/Logging")
+    (subpath "/private/var/db/mds")
+    (subpath APP_PATH))
+
+;; ============================================================
+;; 7. App-specific storage
+;; ============================================================
+(allow file-read* file-write*
+    (subpath (string-append USER_HOME "/Library/Application Support/obsidian"))
+    (subpath (string-append USER_HOME "/Library/Caches/md.obsidian"))
+    (subpath (string-append USER_HOME "/Library/Preferences/md.obsidian.plist"))
+    (subpath "/private/var/folders"))
+
+;; ============================================================
+;; 8. Preference domains (routed through cfprefsd, not raw files)
+;; ============================================================
+(allow user-preference-read (preference-domain "kCFPreferencesAnyApplication"))
+(allow user-preference-read user-preference-write (preference-domain "md.obsidian"))
+(allow user-preference-read (preference-domain "com.apple.universalaccess"))
+(allow user-preference-read (preference-domain "com.apple.CoreGraphics"))
+
+;; ============================================================
+;; 9. Vault constraint — the actual point of this profile
+;; ============================================================
+(allow file-read* file-write* (subpath VAULT_PATH))
+
+;; ============================================================
+;; 10. Network
+;; ============================================================
+(allow network-outbound)
+
+;; Electron process-singleton lock + Obsidian CLI socket
+(allow network-bind
+    (subpath "/private/var/folders"))
+(allow network-bind file-write-create file-write-unlink
+    (literal (string-append USER_HOME "/.obsidian-cli.sock")))
