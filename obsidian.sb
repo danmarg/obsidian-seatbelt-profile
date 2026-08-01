@@ -38,7 +38,9 @@
     (global-name "com.apple.pasteboard.1")
     (global-name "com.apple.CARenderServer")
     (global-name "com.apple.iohideventsystem")
-    (global-name "com.apple.CoreDisplay.currentTime"))
+    (global-name "com.apple.CoreDisplay.currentTime")
+    (global-name "com.apple.coreservices.quarantine-resolver")
+    (global-name "com.apple.lsd.open"))
 
 ;; Electron/Chromium multi-process port handoff (PID suffix is dynamic).
 ;; "md.obsidian" is Obsidian's bundle identifier — fixed across installs,
@@ -86,7 +88,7 @@
 
 (allow file-read-metadata
     (literal "/etc") (literal "/var") (literal "/private")
-    (literal "/Applications") (literal "/Users"))
+    (subpath "/Applications") (literal "/Applications") (literal "/Users"))
 
 (allow file-read-data file-read-metadata
     (literal (string-append USER_HOME "/Library/Preferences/com.apple.symbolichotkeys.plist"))
@@ -139,3 +141,6 @@
     (subpath "/private/var/folders"))
 (allow network-bind file-write-create file-write-unlink
     (literal (string-append USER_HOME "/.obsidian-cli.sock")))
+
+;; Allow opening other apps
+(allow lsopen)
